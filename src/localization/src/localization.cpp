@@ -138,11 +138,38 @@ public:
         if(!initialized)
         {
             /*TODO : Initialize initial guess*/
+            *output_pc = *map_pc;
+
+            if (map_pc->size() > 0) {
+                ROS_INFO("map_pc contains data");
+            } else {
+                ROS_WARN("map_pc is empty. Waiting for non-empty map_pc");
+                return;
+            }
+
+            initialized = true;
         }
 
         /*TODO : Implenment any scan matching base on initial guess, ICP, NDT, etc. */
         /*TODO : Assign the result to pose_x, pose_y, pose_yaw */
         /*TODO : Use result as next time initial guess */
+        pcl::IterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI> icp;
+        icp.setInputSource(radar_pc);
+        icp.setInputTarget(output_pc);
+
+        //icp parameters
+        icp.setMaximumIterations(50);
+
+        pcl::PointCloud<pcl::PointXYZI> cloud_aligned;
+        icp.align(cloud_aligned);
+
+        if (icp.hasConverged()) {
+            std::cout << "icp score =  " << icp.getFitnessScore() << std::endl;
+            std::cout << "TF = " << std::endl << icp.getFinalTransformation() << std::endl;
+        } else {
+            std::cerr << "icp failed" << std::endl;
+        }
+
         
         tf_brocaster(pose_x, pose_y, pose_yaw);
         radar_pose_publisher(pose_x, pose_y, pose_yaw);

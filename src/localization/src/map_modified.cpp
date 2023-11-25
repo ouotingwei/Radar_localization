@@ -133,6 +133,6 @@ int main(int argc, char** argv)
     
     map_pub = nh.advertise<sensor_msgs::PointCloud2>("/map_pc", 1);
     pub_all();
-    ros:spin();
+    ros::spin();
     return 0;
 }

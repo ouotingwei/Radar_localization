@@ -38,10 +38,10 @@ public:
     {
         initialized = false;
         _nh = nh;
-        _nh.param<string>("map_path", map_path, "/Default/path");
+        _nh.param<string>("map_path", map_path, "/home/tingweiou/Radar_localization/src/localization/data/pcd_tiles_filtered/");
 
         map_pub = _nh.advertise<sensor_msgs::PointCloud2>("/map_pc", 1);
-        radar_pose_sub = _nh.subscribe("/tranformed_radar_pose", 1, &map_publisher::radar_pose_callback, this);
+        radar_pose_sub = _nh.subscribe("/tranformed_radar_pose", 100, &map_publisher::radar_pose_callback, this);
         gps_sub = _nh.subscribe("/gps", 1, &map_publisher::gps_call_back, this);
     }
 
@@ -52,6 +52,7 @@ public:
 
     void gps_call_back(const geometry_msgs::PoseStamped::ConstPtr& msg)
     {
+        ROS_INFO("GPS");
         if(!initialized)
         {
             int x = ((int)msg->pose.position.x);
@@ -63,6 +64,7 @@ public:
 
     void initialize(int x, int y)
     {
+        ROS_INFO("INIT");
         flag = false;
         sensor_msgs::PointCloud2 map_pc;
         pcl::PointCloud<pcl::PointXYZI>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZI>);
@@ -111,6 +113,7 @@ public:
 
     void radar_pose_callback(const geometry_msgs::PoseStamped::ConstPtr& msg)
     {
+        ROS_INFO("RADAR");
         int x = ((int)msg->pose.position.x);
         int y = ((int)msg->pose.position.y);
         if(!initialized)
@@ -149,6 +152,8 @@ public:
                 {
                     string map_file = map_path + "submap_" + to_string(i) +  "_" + to_string(j) + ".pcd";
                     ifstream f(map_file);
+
+                    cout << map_file << endl;
             
                     if(!f)
                     {
@@ -180,7 +185,10 @@ int main(int argc, char** argv)
 {
     ros::init (argc, argv, "map_publisher");
     ros::NodeHandle nh;
+    ros::Rate loop_rate(1); // 1 Hz
+
     map_publisher map_publisher(nh);
-    ros:spin();
+
+    ros::spin();
     return 0;
 }
