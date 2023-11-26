@@ -13,6 +13,7 @@
 #include <pcl/filters/passthrough.h>
 #include <pcl/registration/icp.h>
 #include <pcl_ros/transforms.h>
+#include <pcl/registration/ndt.h>
 
 #include <tf/tf.h>
 #include <tf/transform_broadcaster.h>
@@ -22,6 +23,7 @@
 #include <nav_msgs/Path.h>
 
 using namespace std;
+
 class Localizer
 {
 private:
@@ -61,6 +63,8 @@ private:
     bool gps_ready = false;
     bool initialized = false;
 
+    bool test_flag = false;
+
 public:
     Localizer(ros::NodeHandle nh) : map_pc(new pcl::PointCloud<pcl::PointXYZI>)
     {
@@ -74,7 +78,7 @@ public:
         file.open(save_path);
         file << "seq,x,y,yaw\n";
 
-        radar_pc_sub = _nh.subscribe("/radar_pc", 400, &Localizer::radar_pc_callback, this);
+        radar_pc_sub = _nh.subscribe("/radar_pc", 1, &Localizer::radar_pc_callback, this);
         map_sub = _nh.subscribe("/map_pc", 1, &Localizer::map_callback, this);
         gps_sub = _nh.subscribe("/gps", 1, &Localizer::gps_callback, this);
 
@@ -121,7 +125,11 @@ public:
     }
 
     void radar_pc_callback(const sensor_msgs::PointCloud2::ConstPtr& msg)
-    {
+    {   
+        //if(test_flag == true){
+        //   return;
+        //}
+
         ROS_WARN("Got Radar Pointcloud");
         pcl::PointCloud<pcl::PointXYZI>::Ptr radar_pc(new pcl::PointCloud<pcl::PointXYZI>);
         pcl::PointCloud<pcl::PointXYZI>::Ptr output_pc(new pcl::PointCloud<pcl::PointXYZI>);
@@ -137,15 +145,18 @@ public:
 
         if(!initialized)
         {
-            /*TODO : Initialize initial guess*/
-            *output_pc = *map_pc;
+            // Initial adjustment for x-axis
+            Eigen::Affine3f x_adjustment_transform = Eigen::Affine3f::Identity();
+            float x_adjustment_value = 0.0;  // Adjust this value based on your requirements
+            x_adjustment_transform.translation() << x_adjustment_value, 0.0, 0.0;
 
-            if (map_pc->size() > 0) {
-                ROS_INFO("map_pc contains data");
-            } else {
-                ROS_WARN("map_pc is empty. Waiting for non-empty map_pc");
-                return;
-            }
+            // Explicitly convert to Eigen::Matrix4f
+            Eigen::Matrix4f x_adjustment_matrix = x_adjustment_transform.matrix();
+
+            // Assign the result to init_guess
+            init_guess = x_adjustment_matrix;
+
+            pose_x += x_adjustment_value;
 
             initialized = true;
         }
@@ -153,23 +164,35 @@ public:
         /*TODO : Implenment any scan matching base on initial guess, ICP, NDT, etc. */
         /*TODO : Assign the result to pose_x, pose_y, pose_yaw */
         /*TODO : Use result as next time initial guess */
+
+        *output_pc = *map_pc;
+        
+        // ICP object
         pcl::IterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI> icp;
         icp.setInputSource(radar_pc);
         icp.setInputTarget(output_pc);
-
-        //icp parameters
-        icp.setMaximumIterations(50);
-
+        
         pcl::PointCloud<pcl::PointXYZI> cloud_aligned;
         icp.align(cloud_aligned);
 
         if (icp.hasConverged()) {
-            std::cout << "icp score =  " << icp.getFitnessScore() << std::endl;
-            std::cout << "TF = " << std::endl << icp.getFinalTransformation() << std::endl;
-        } else {
-            std::cerr << "icp failed" << std::endl;
-        }
+            std::cout << "ICP converged. Transformation matrix:\n" << icp.getFinalTransformation() << std::endl;
+            
+            // Extract pose information from the transformation matrix
+            pose_x += icp.getFinalTransformation()(0, 3);
+            pose_y += icp.getFinalTransformation()(1, 3);
 
+            // Extract yaw (rotation around the z-axis) using Euler angles
+            pose_yaw += atan2(icp.getFinalTransformation()(1, 0), icp.getFinalTransformation()(0, 0));
+
+            // TODO: Implement any additional processing or filtering of the pose information
+
+            // Use the result as the next time initial guess
+            init_guess = icp.getFinalTransformation();
+        } else {
+            std::cout << "ICP did not converge." << std::endl;
+            return;
+        }
         
         tf_brocaster(pose_x, pose_y, pose_yaw);
         radar_pose_publisher(pose_x, pose_y, pose_yaw);
@@ -188,6 +211,7 @@ public:
         file << pose_yaw << "\n";
 
         seq++;
+        //test_flag = true;
     }
 
     void radar_pose_publisher(float x, float y, float yaw)
@@ -245,6 +269,8 @@ int main(int argc, char** argv)
 {
     ros::init (argc, argv, "localizer");
     ros::NodeHandle nh;
+    // ros::Rate rate(1);
+
     Localizer Localizer(nh);
 
     ros::spin();

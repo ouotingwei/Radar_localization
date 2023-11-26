@@ -38,7 +38,7 @@ public:
     {
         initialized = false;
         _nh = nh;
-        _nh.param<string>("map_path", map_path, "/home/tingweiou/Radar_localization/src/localization/data/pcd_tiles_filtered/");
+        _nh.param<string>("map_path", map_path, "/Default/path");
 
         map_pub = _nh.advertise<sensor_msgs::PointCloud2>("/map_pc", 1);
         radar_pose_sub = _nh.subscribe("/tranformed_radar_pose", 100, &map_publisher::radar_pose_callback, this);

@@ -29,7 +29,7 @@ pcl::PointCloud<pcl::PointXYZI>::Ptr create_radar_pc(Mat img)
 {
     pcl::PointCloud<pcl::PointXYZI>::Ptr new_pc(new pcl::PointCloud<pcl::PointXYZI>);
     
-    /*TODO : Transform Polar Image to Cartisien Pointcloud*/
+    /*TODO : Transform Polar Image to Cartesian Pointcloud*/
     for(int col=0; col<img.cols; col++)
     {
         double azimuth_rad = static_cast<double>(col) / img.cols * 2.0 * M_PI;
@@ -37,10 +37,10 @@ pcl::PointCloud<pcl::PointXYZI>::Ptr create_radar_pc(Mat img)
         {   
             pcl::PointXYZI point;
 
-            if(row>5 && img.at<uchar>(row, col)>80)
+            if(row>4 && img.at<uchar>(row, col)>100)
             {
                 point.x = static_cast<float>(row) * range_resolution * cos(azimuth_rad);
-                point.y = static_cast<float>(row) * range_resolution * sin(azimuth_rad);
+                point.y = static_cast<float>(row) * range_resolution * (-sin(azimuth_rad)); // Flip horizontally
                 point.z = 0;
                 point.intensity = img.at<uchar>(row, col);
                 new_pc -> push_back(point);
