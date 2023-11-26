@@ -41,7 +41,7 @@ public:
         _nh.param<string>("map_path", map_path, "/Default/path");
 
         map_pub = _nh.advertise<sensor_msgs::PointCloud2>("/map_pc", 1);
-        radar_pose_sub = _nh.subscribe("/tranformed_radar_pose", 100, &map_publisher::radar_pose_callback, this);
+        radar_pose_sub = _nh.subscribe("/tranformed_radar_pose", 1, &map_publisher::radar_pose_callback, this);
         gps_sub = _nh.subscribe("/gps", 1, &map_publisher::gps_call_back, this);
     }
 
@@ -185,8 +185,6 @@ int main(int argc, char** argv)
 {
     ros::init (argc, argv, "map_publisher");
     ros::NodeHandle nh;
-    ros::Rate loop_rate(1); // 1 Hz
-
     map_publisher map_publisher(nh);
 
     ros::spin();

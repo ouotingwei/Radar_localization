@@ -28,28 +28,54 @@ bool intensity_compare(pcl::PointXYZI a, pcl::PointXYZI b)
 pcl::PointCloud<pcl::PointXYZI>::Ptr create_radar_pc(Mat img)
 {
     pcl::PointCloud<pcl::PointXYZI>::Ptr new_pc(new pcl::PointCloud<pcl::PointXYZI>);
+    pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_pc(new pcl::PointCloud<pcl::PointXYZI>);
     
     /*TODO : Transform Polar Image to Cartesian Pointcloud*/
     for(int col=0; col<img.cols; col++)
     {
         double azimuth_rad = static_cast<double>(col) / img.cols * 2.0 * M_PI;
+
+        // Create a vector to store points for each angle
+        std::vector<pcl::PointXYZI> points_for_angle;
+
         for(int row=0; row<img.rows; row++)
         {   
             pcl::PointXYZI point;
 
-            if(row>4 && img.at<uchar>(row, col)>100)
+            if(row > 4 && img.at<uchar>(row, col) > 80)
             {
-                point.x = static_cast<float>(row) * range_resolution * cos(azimuth_rad);
-                point.y = static_cast<float>(row) * range_resolution * (-sin(azimuth_rad)); // Flip horizontally
-                point.z = 0;
-                point.intensity = img.at<uchar>(row, col);
-                new_pc -> push_back(point);
+                // Calculate distance from the origin (circle center)
+                double distance = static_cast<double>(row) * range_resolution;
+
+                // Set a threshold for the distance from the origin
+                double distance_threshold = 100.0;  // Adjust this value based on your requirements
+
+                // Check if the distance exceeds the threshold
+                if (distance <= distance_threshold)
+                {
+                    point.x = static_cast<float>(row) * range_resolution * cos(azimuth_rad);
+                    point.y = static_cast<float>(row) * range_resolution * (-sin(azimuth_rad)); // Flip horizontally
+                    point.z = 0;
+                    point.intensity = img.at<uchar>(row, col);
+
+                    // Add the point to the vector
+                    points_for_angle.push_back(point);
+                }
             }
         }
+
+        // Sort the vector based on intensity in descending order
+        std::sort(points_for_angle.begin(), points_for_angle.end(), intensity_compare);
+
+        // Add the point with maximum intensity to the new point cloud
+        if (!points_for_angle.empty()) {
+            new_pc->push_back(points_for_angle[0]);
+        }
     }
-    
+
     return new_pc;
 }
+
 
 void radarCallback(const sensor_msgs::ImageConstPtr& msg)
 {

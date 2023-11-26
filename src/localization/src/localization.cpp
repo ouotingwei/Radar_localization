@@ -14,6 +14,7 @@
 #include <pcl/registration/icp.h>
 #include <pcl_ros/transforms.h>
 #include <pcl/registration/ndt.h>
+#include <pcl/filters/passthrough.h> // add
 
 #include <tf/tf.h>
 #include <tf/transform_broadcaster.h>
@@ -63,7 +64,7 @@ private:
     bool gps_ready = false;
     bool initialized = false;
 
-    bool test_flag = false;
+    Eigen::Matrix4f xy_adjustment_matrix; // add
 
 public:
     Localizer(ros::NodeHandle nh) : map_pc(new pcl::PointCloud<pcl::PointXYZI>)
@@ -126,10 +127,6 @@ public:
 
     void radar_pc_callback(const sensor_msgs::PointCloud2::ConstPtr& msg)
     {   
-        //if(test_flag == true){
-        //   return;
-        //}
-
         ROS_WARN("Got Radar Pointcloud");
         pcl::PointCloud<pcl::PointXYZI>::Ptr radar_pc(new pcl::PointCloud<pcl::PointXYZI>);
         pcl::PointCloud<pcl::PointXYZI>::Ptr output_pc(new pcl::PointCloud<pcl::PointXYZI>);
@@ -143,23 +140,27 @@ public:
             ros::spinOnce();
         }
 
-        if(!initialized)
-        {
-            // Initial adjustment for x-axis
-            Eigen::Affine3f x_adjustment_transform = Eigen::Affine3f::Identity();
+        if (!initialized) {
+            // Initial adjustment for x and y axes
+            Eigen::Affine3f xy_adjustment_transform = Eigen::Affine3f::Identity(); // -> global
             float x_adjustment_value = 0.0;  // Adjust this value based on your requirements
-            x_adjustment_transform.translation() << x_adjustment_value, 0.0, 0.0;
+            float y_adjustment_value = 6.0;  // Adjust this value based on your requirements
+            xy_adjustment_transform.translation() << x_adjustment_value, y_adjustment_value, 0.0;
 
             // Explicitly convert to Eigen::Matrix4f
-            Eigen::Matrix4f x_adjustment_matrix = x_adjustment_transform.matrix();
+            xy_adjustment_matrix = xy_adjustment_transform.matrix();
 
             // Assign the result to init_guess
-            init_guess = x_adjustment_matrix;
+            init_guess = xy_adjustment_matrix;
 
             pose_x += x_adjustment_value;
+            pose_y += y_adjustment_value;
+
+            pcl::transformPointCloud(*radar_pc, *radar_pc, init_guess);
 
             initialized = true;
         }
+
 
         /*TODO : Implenment any scan matching base on initial guess, ICP, NDT, etc. */
         /*TODO : Assign the result to pose_x, pose_y, pose_yaw */
@@ -171,7 +172,11 @@ public:
         pcl::IterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI> icp;
         icp.setInputSource(radar_pc);
         icp.setInputTarget(output_pc);
-        
+
+        icp.setMaximumIterations(500);
+        icp.setMaxCorrespondenceDistance(20);
+        icp.setEuclideanFitnessEpsilon(1);
+
         pcl::PointCloud<pcl::PointXYZI> cloud_aligned;
         icp.align(cloud_aligned);
 
@@ -194,6 +199,42 @@ public:
             return;
         }
         
+
+        /*
+        // NDT object
+        pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI> ndt;
+        ndt.setInputSource(radar_pc);
+        ndt.setInputTarget(output_pc);
+
+        // Set NDT parameters
+        ndt.setMaximumIterations(500);  // Adjust based on your needs
+        ndt.setStepSize(1);  // Adjust based on your needs
+        ndt.setResolution(1);  // Adjust based on your needs
+        //ndt.setTransformationEpsilon(10);  // Adjust based on your needs
+
+        pcl::PointCloud<pcl::PointXYZI> cloud_aligned;
+        ndt.align(cloud_aligned);
+
+        if (ndt.hasConverged()) {
+            std::cout << "NDT converged. Transformation matrix:\n" << ndt.getFinalTransformation() << std::endl;
+            
+            // Extract pose information from the transformation matrix
+            pose_x += ndt.getFinalTransformation()(0, 3);
+            pose_y += ndt.getFinalTransformation()(1, 3);
+
+            // Extract yaw (rotation around the z-axis) using Euler angles
+            pose_yaw += atan2(ndt.getFinalTransformation()(1, 0), ndt.getFinalTransformation()(0, 0));
+
+            // TODO: Implement any additional processing or filtering of the pose information
+
+            // Use the result as the next time initial guess
+            init_guess = ndt.getFinalTransformation();
+        } else {
+            std::cout << "NDT did not converge." << std::endl;
+            return;
+        }
+        */
+        
         tf_brocaster(pose_x, pose_y, pose_yaw);
         radar_pose_publisher(pose_x, pose_y, pose_yaw);
 
@@ -211,7 +252,6 @@ public:
         file << pose_yaw << "\n";
 
         seq++;
-        //test_flag = true;
     }
 
     void radar_pose_publisher(float x, float y, float yaw)
@@ -269,8 +309,6 @@ int main(int argc, char** argv)
 {
     ros::init (argc, argv, "localizer");
     ros::NodeHandle nh;
-    // ros::Rate rate(1);
-
     Localizer Localizer(nh);
 
     ros::spin();
