@@ -52,7 +52,6 @@ public:
 
     void gps_call_back(const geometry_msgs::PoseStamped::ConstPtr& msg)
     {
-        ROS_INFO("GPS");
         if(!initialized)
         {
             int x = ((int)msg->pose.position.x);
@@ -64,7 +63,6 @@ public:
 
     void initialize(int x, int y)
     {
-        ROS_INFO("INIT");
         flag = false;
         sensor_msgs::PointCloud2 map_pc;
         pcl::PointCloud<pcl::PointXYZI>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZI>);
@@ -113,7 +111,6 @@ public:
 
     void radar_pose_callback(const geometry_msgs::PoseStamped::ConstPtr& msg)
     {
-        ROS_INFO("RADAR");
         int x = ((int)msg->pose.position.x);
         int y = ((int)msg->pose.position.y);
         if(!initialized)
@@ -152,8 +149,6 @@ public:
                 {
                     string map_file = map_path + "submap_" + to_string(i) +  "_" + to_string(j) + ".pcd";
                     ifstream f(map_file);
-
-                    cout << map_file << endl;
             
                     if(!f)
                     {
@@ -186,7 +181,6 @@ int main(int argc, char** argv)
     ros::init (argc, argv, "map_publisher");
     ros::NodeHandle nh;
     map_publisher map_publisher(nh);
-
     ros::spin();
     return 0;
 }

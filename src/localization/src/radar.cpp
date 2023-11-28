@@ -29,6 +29,8 @@ pcl::PointCloud<pcl::PointXYZI>::Ptr create_radar_pc(Mat img)
 {
     pcl::PointCloud<pcl::PointXYZI>::Ptr new_pc(new pcl::PointCloud<pcl::PointXYZI>);
     pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_pc(new pcl::PointCloud<pcl::PointXYZI>);
+
+    GaussianBlur(img, img, Size(5, 5), 0, 0);
     
     /*TODO : Transform Polar Image to Cartesian Pointcloud*/
     for(int col=0; col<img.cols; col++)
@@ -48,7 +50,7 @@ pcl::PointCloud<pcl::PointXYZI>::Ptr create_radar_pc(Mat img)
                 double distance = static_cast<double>(row) * range_resolution;
 
                 // Set a threshold for the distance from the origin
-                double distance_threshold = 100.0;  // Adjust this value based on your requirements
+                double distance_threshold = 500.0;  // Adjust this value based on your requirements
 
                 // Check if the distance exceeds the threshold
                 if (distance <= distance_threshold)
@@ -67,14 +69,16 @@ pcl::PointCloud<pcl::PointXYZI>::Ptr create_radar_pc(Mat img)
         // Sort the vector based on intensity in descending order
         std::sort(points_for_angle.begin(), points_for_angle.end(), intensity_compare);
 
-        // Add the point with maximum intensity to the new point cloud
-        if (!points_for_angle.empty()) {
-            new_pc->push_back(points_for_angle[0]);
+        // Add the top five points with maximum intensity to the new point cloud
+        int num_points_to_keep = std::min(10, static_cast<int>(points_for_angle.size()));
+        for (int i = 0; i < num_points_to_keep; i++) {
+            new_pc->push_back(points_for_angle[i]);
         }
     }
 
     return new_pc;
 }
+
 
 
 void radarCallback(const sensor_msgs::ImageConstPtr& msg)
