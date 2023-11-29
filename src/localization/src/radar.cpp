@@ -70,7 +70,7 @@ pcl::PointCloud<pcl::PointXYZI>::Ptr create_radar_pc(Mat img)
         std::sort(points_for_angle.begin(), points_for_angle.end(), intensity_compare);
 
         // Add the top five points with maximum intensity to the new point cloud
-        int num_points_to_keep = std::min(10, static_cast<int>(points_for_angle.size()));
+        int num_points_to_keep = std::min(20, static_cast<int>(points_for_angle.size()));
         for (int i = 0; i < num_points_to_keep; i++) {
             new_pc->push_back(points_for_angle[i]);
         }

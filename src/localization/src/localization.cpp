@@ -64,8 +64,6 @@ private:
     bool gps_ready = false;
     bool initialized = false;
 
-    Eigen::Matrix4f xy_adjustment_matrix; // add
-
 public:
     Localizer(ros::NodeHandle nh) : map_pc(new pcl::PointCloud<pcl::PointXYZI>)
     {
@@ -142,19 +140,11 @@ public:
 
         if (!initialized) {
             // Initial adjustment for x and y axes
-            Eigen::Affine3f xy_adjustment_transform = Eigen::Affine3f::Identity(); // -> global
             float x_adjustment_value = 0.0;  // Adjust this value based on your requirements
-            float y_adjustment_value = 3.0;  // Adjust this value based on your requirements
-            xy_adjustment_transform.translation() << x_adjustment_value, y_adjustment_value, 0.0;
-
-            // Explicitly convert to Eigen::Matrix4f
-            xy_adjustment_matrix = xy_adjustment_transform.matrix();
-
-            // Assign the result to init_guess
-            init_guess = xy_adjustment_matrix;
-
-            pose_x += x_adjustment_value;
-            pose_y += y_adjustment_value;
+            float y_adjustment_value = 6.0;  // Adjust this value based on your requirements
+            float yaw_adjustment_value = 0.0; // Adjust this value based on your requirements
+            
+            set_init_guess(x_adjustment_value, y_adjustment_value, yaw_adjustment_value);
 
             pcl::transformPointCloud(*radar_pc, *radar_pc, init_guess);
 
@@ -167,11 +157,13 @@ public:
         /*TODO : Use result as next time initial guess */
 
         *output_pc = *map_pc;
+
+        pcl::transformPointCloud(*radar_pc, *radar_pc, init_guess);
         
         // ICP object
         pcl::IterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI> icp;
-        icp.setInputSource(output_pc);
-        icp.setInputTarget(radar_pc);
+        icp.setInputSource(radar_pc);
+        icp.setInputTarget(output_pc);
 
         icp.setMaximumIterations(100);
         icp.setMaxCorrespondenceDistance(8);
@@ -184,11 +176,13 @@ public:
             std::cout << "ICP converged. Transformation matrix:\n" << icp.getFinalTransformation() << std::endl;
             
             // Extract pose information from the transformation matrix
-            pose_x -= icp.getFinalTransformation()(0, 3);
-            pose_y -= icp.getFinalTransformation()(1, 3);
+            pose_x += icp.getFinalTransformation()(0, 3);
+            pose_y += icp.getFinalTransformation()(1, 3);
 
             // Extract yaw (rotation around the z-axis) using Euler angles
-            pose_yaw -= atan2(icp.getFinalTransformation()(1, 0), icp.getFinalTransformation()(0, 0));
+            pose_yaw += atan2(icp.getFinalTransformation()(1, 0), icp.getFinalTransformation()(0, 0));
+
+            set_init_guess(pose_x, pose_y, pose_yaw);
 
         } else {
             std::cout << "ICP did not converge." << std::endl;
