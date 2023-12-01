@@ -44,13 +44,13 @@ pcl::PointCloud<pcl::PointXYZI>::Ptr create_radar_pc(Mat img)
         {   
             pcl::PointXYZI point;
 
-            if(row > 4 && img.at<uchar>(row, col) > 80)
+            if(row > 4 && img.at<uchar>(row, col) > 70)
             {
                 // Calculate distance from the origin (circle center)
                 double distance = static_cast<double>(row) * range_resolution;
 
                 // Set a threshold for the distance from the origin
-                double distance_threshold = 500.0;  // Adjust this value based on your requirements
+                double distance_threshold = 100.0;  // Adjust this value based on your requirements
 
                 // Check if the distance exceeds the threshold
                 if (distance <= distance_threshold)

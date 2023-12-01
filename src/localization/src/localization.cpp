@@ -2,6 +2,7 @@
 #include <fstream>
 #include <iostream>
 #include <cmath>
+#include <limits>
 
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
@@ -138,49 +139,40 @@ public:
             ros::spinOnce();
         }
 
-        if (!initialized) {
-            // Initial adjustment for x and y axes
-            float x_adjustment_value = 0.0;  // Adjust this value based on your requirements
-            float y_adjustment_value = 6.0;  // Adjust this value based on your requirements
-            float yaw_adjustment_value = 0.0; // Adjust this value based on your requirements
-            
-            set_init_guess(x_adjustment_value, y_adjustment_value, yaw_adjustment_value);
-
-            pcl::transformPointCloud(*radar_pc, *radar_pc, init_guess);
+        if (!initialized)
+        {
+            set_init_guess(pose_x, pose_y, pose_y);
 
             initialized = true;
         }
-
 
         /*TODO : Implenment any scan matching base on initial guess, ICP, NDT, etc. */
         /*TODO : Assign the result to pose_x, pose_y, pose_yaw */
         /*TODO : Use result as next time initial guess */
 
-        *output_pc = *map_pc;
-
         pcl::transformPointCloud(*radar_pc, *radar_pc, init_guess);
-        
-        // ICP object
+
+        // icp
         pcl::IterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI> icp;
         icp.setInputSource(radar_pc);
-        icp.setInputTarget(output_pc);
+        icp.setInputTarget(map_pc);
 
-        icp.setMaximumIterations(100);
-        icp.setMaxCorrespondenceDistance(8);
+        icp.setMaximumIterations(500);
+        icp.setMaxCorrespondenceDistance(3);
         icp.setEuclideanFitnessEpsilon(0.2);
 
-        pcl::PointCloud<pcl::PointXYZI> cloud_aligned;
-        icp.align(cloud_aligned);
+        icp.align(*output_pc);
 
         if (icp.hasConverged()) {
-            std::cout << "ICP converged. Transformation matrix:\n" << icp.getFinalTransformation() << std::endl;
-            
+            //std::cout << "ICP converged. Transformation matrix:\n" << icp_1.getFinalTransformation() << std::endl;
+            ROS_WARN("ICP converged. Fitness score: %f", icp.getFitnessScore());
+
             // Extract pose information from the transformation matrix
-            pose_x += icp.getFinalTransformation()(0, 3);
-            pose_y += icp.getFinalTransformation()(1, 3);
+            pose_x -= icp.getFinalTransformation()(0, 3);
+            pose_y -= icp.getFinalTransformation()(1, 3);
 
             // Extract yaw (rotation around the z-axis) using Euler angles
-            pose_yaw += atan2(icp.getFinalTransformation()(1, 0), icp.getFinalTransformation()(0, 0));
+            pose_yaw -= atan2(icp.getFinalTransformation()(1, 0), icp.getFinalTransformation()(0, 0));
 
             set_init_guess(pose_x, pose_y, pose_yaw);
 
@@ -188,14 +180,14 @@ public:
             std::cout << "ICP did not converge." << std::endl;
             return;
         }
-        
+      
         tf_brocaster(pose_x, pose_y, pose_yaw);
         radar_pose_publisher(pose_x, pose_y, pose_yaw);
 
         sensor_msgs::PointCloud2 radar_pc_msg;
         pcl::toROSMsg(*radar_pc, radar_pc_msg);
         radar_pc_msg.header.stamp = ros::Time::now();
-        radar_pc_msg.header.frame_id = "base_link";
+        radar_pc_msg.header.frame_id = "map";
         radar_pc_pub.publish(radar_pc_msg);
         ROS_INFO("Publish transformed pc");
         ROS_INFO("[seq %d] x:%.3f, y:%.3f, yaw:%.3f\n", seq, pose_x, pose_y, pose_yaw);
@@ -253,8 +245,10 @@ public:
         init_guess(0, 3) = x;
 
         init_guess(1, 0) = sin(yaw);
-        init_guess(1, 1) = -sin(yaw);
+        init_guess(1, 1) = cos(yaw);
         init_guess(1, 3) = y;
+
+        ROS_WARN("set init_guess ");
     }
 };
 
