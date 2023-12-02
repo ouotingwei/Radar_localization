@@ -44,13 +44,13 @@ pcl::PointCloud<pcl::PointXYZI>::Ptr create_radar_pc(Mat img)
         {   
             pcl::PointXYZI point;
 
-            if(row > 4 && img.at<uchar>(row, col) > 70)
+            if(row > 4 && img.at<uchar>(row, col) > 60)
             {
                 // Calculate distance from the origin (circle center)
                 double distance = static_cast<double>(row) * range_resolution;
 
                 // Set a threshold for the distance from the origin
-                double distance_threshold = 50.0;  // Adjust this value based on your requirements
+                double distance_threshold = 55.0;  // Adjust this value based on your requirements
 
                 // Check if the distance exceeds the threshold
                 if (distance <= distance_threshold)
@@ -70,7 +70,7 @@ pcl::PointCloud<pcl::PointXYZI>::Ptr create_radar_pc(Mat img)
         std::sort(points_for_angle.begin(), points_for_angle.end(), intensity_compare);
 
         // Add the top five points with maximum intensity to the new point cloud
-        int num_points_to_keep = std::min(40, static_cast<int>(points_for_angle.size()));
+        int num_points_to_keep = std::min(20, static_cast<int>(points_for_angle.size()));
         for (int i = 0; i < num_points_to_keep; i++) {
             new_pc->push_back(points_for_angle[i]);
         }

@@ -198,12 +198,30 @@ public:
             ROS_WARN("ICP Rough Matching converged. Fitness score: %f", icp_R.getFitnessScore());
 
             // Extract pose information from the transformation matrix
-            if(abs(icp_R.getFinalTransformation()(1, 3)) < 1){
-                pose_x = pose_x + icp_R.getFinalTransformation()(0, 3);
+            if(abs(icp_R.getFinalTransformation()(1, 3)) < 2 )
+            {
                 pose_y = pose_y + icp_R.getFinalTransformation()(1, 3);
-            }else{
-                pose_x = pose_x + icp_R.getFinalTransformation()(0, 3);
+
+                if(icp_R.getFinalTransformation()(0, 3) < 0)
+                {
+                    pose_x = pose_x + icp_R.getFinalTransformation()(0, 3);
+                }
+                else
+                {
+                    //pose_x = pose_x + icp_R.getFinalTransformation()(0, 3);
+                }
+            }
+            else
+            {
                 pose_y = pose_y ;
+                if(icp_R.getFinalTransformation()(0, 3) < 0)
+                {
+                    pose_x = pose_x + icp_R.getFinalTransformation()(0, 3);
+                }
+                else
+                {
+                    //pose_x = pose_x + icp_R.getFinalTransformation()(0, 3);
+                }
             }
             
 
