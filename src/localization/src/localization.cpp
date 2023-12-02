@@ -76,7 +76,7 @@ public:
 
         init_guess.setIdentity();
         file.open(save_path);
-        file << "seq,x,y,yaw\n";
+        file << "id,x,y,yaw\n";
 
         radar_pc_sub = _nh.subscribe("/radar_pc", 1, &Localizer::radar_pc_callback, this);
         map_sub = _nh.subscribe("/map_pc", 1, &Localizer::map_callback, this);
@@ -133,8 +133,13 @@ public:
         //ROS_WARN("Got Radar Pointcloud");
         pcl::PointCloud<pcl::PointXYZI>::Ptr radar_pc(new pcl::PointCloud<pcl::PointXYZI>);
         pcl::PointCloud<pcl::PointXYZI>::Ptr output_pc(new pcl::PointCloud<pcl::PointXYZI>);
+        pcl::PointCloud<pcl::PointXYZI>::Ptr pc(new pcl::PointCloud<pcl::PointXYZI>);   //add
         pcl::fromROSMsg(*msg, *radar_pc);
         //ROS_INFO("point size: %d", radar_pc->width);
+
+        float search_range = 4;
+        float best_x, best_y, best_yaw = 0;
+        float min_scores = 1000;
 
         while(!(map_ready && gps_ready))
         { 
@@ -145,14 +150,9 @@ public:
 
         if (!initialized)
         {
-            pcl::PointCloud<pcl::PointXYZI>::Ptr pc(new pcl::PointCloud<pcl::PointXYZI>);
-
-            float search_range = 3.0;
-            float best_x, best_y, best_yaw = 0;
-            float min_scores = 1000;
-                for(float x = pose_x - search_range; x <= pose_x + search_range; x += 3){
-                    for(float y = pose_y - search_range; y <= pose_y + search_range; y += 3){
-                        *pc = *radar_pc;
+                for(float x = pose_x - search_range; x <= pose_x + search_range; x += 2){
+                    for(float y = pose_y - search_range; y <= pose_y + search_range; y += 2){
+                        pcl::copyPointCloud(*radar_pc, *pc);
                         set_init_guess(x, y, pose_yaw);
                         pcl::transformPointCloud(*pc, *pc, init_guess);
 
@@ -162,7 +162,7 @@ public:
 
                         icp_init.setMaximumIterations(500);
                         icp_init.setMaxCorrespondenceDistance(1.5);
-                        icp_init.setEuclideanFitnessEpsilon(1);
+                        icp_init.setEuclideanFitnessEpsilon(0.2);
 
                         icp_init.align(*output_pc);
 
@@ -174,23 +174,22 @@ public:
                     }
                 }
 
-
-            ROS_WARN("MIN SCORES = %d", cnt);
-
             set_init_guess(best_x, best_y, pose_yaw);
+            pose_x = best_x;
+            pose_y = best_y;
             initialized = true;
         }
 
         pcl::transformPointCloud(*radar_pc, *radar_pc, init_guess);
-
+        
         // icp Rough Matching
         pcl::IterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI> icp_R;
         icp_R.setInputSource(radar_pc);
         icp_R.setInputTarget(map_pc);
 
-        icp_R.setMaximumIterations(800);
+        //icp_R.setMaximumIterations(100);
         icp_R.setMaxCorrespondenceDistance(3);
-        icp_R.setEuclideanFitnessEpsilon(1);
+        //icp_R.setEuclideanFitnessEpsilon(2);
 
         icp_R.align(*output_pc);
 
@@ -199,8 +198,14 @@ public:
             ROS_WARN("ICP Rough Matching converged. Fitness score: %f", icp_R.getFitnessScore());
 
             // Extract pose information from the transformation matrix
-            pose_x = pose_x + icp_R.getFinalTransformation()(0, 3);
-            pose_y = pose_y + icp_R.getFinalTransformation()(1, 3);
+            if(abs(icp_R.getFinalTransformation()(1, 3)) < 1){
+                pose_x = pose_x + icp_R.getFinalTransformation()(0, 3);
+                pose_y = pose_y + icp_R.getFinalTransformation()(1, 3);
+            }else{
+                pose_x = pose_x + icp_R.getFinalTransformation()(0, 3);
+                pose_y = pose_y ;
+            }
+            
 
             // Extract yaw (rotation around the z-axis) using Euler angles
             pose_yaw = pose_yaw + atan2(icp_R.getFinalTransformation()(1, 0), icp_R.getFinalTransformation()(0, 0));
@@ -212,24 +217,37 @@ public:
             return;
         }
 
+        /*
         // icp Fine Matching
         pcl::IterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI> icp_F;
         icp_F.setInputSource(output_pc);
         icp_F.setInputTarget(map_pc);
 
-        icp_F.setMaximumIterations(500);
-        icp_F.setMaxCorrespondenceDistance(1.5);
-        icp_F.setEuclideanFitnessEpsilon(0.5);
+        icp_F.setMaximumIterations(400);
+        icp_F.setMaxCorrespondenceDistance(1);
+        icp_F.setEuclideanFitnessEpsilon(0.1);
 
         icp_F.align(*output_pc);
 
         if (icp_F.hasConverged()) {
             std::cout << "ICP Fine Matching converged. Transformation matrix:\n" << icp_F.getFinalTransformation() << std::endl;
             ROS_WARN("ICP Fine Matching converged. Fitness score: %f", icp_F.getFitnessScore());
+
+            // Extract pose information from the transformation matrix
+            pose_x = pose_x + icp_R.getFinalTransformation()(0, 3);
+            pose_y = pose_y + icp_R.getFinalTransformation()(1, 3);
+
+            // Extract yaw (rotation around the z-axis) using Euler angles
+            pose_yaw = pose_yaw + atan2(icp_R.getFinalTransformation()(1, 0), icp_R.getFinalTransformation()(0, 0));
+
+            set_init_guess(pose_x, pose_y, pose_yaw);
+            
         } else {
             std::cout << "ICP Fine Matching did not converge." << std::endl;
             return;
         }
+        */
+        
 
         //ROS_WARN("pose_x = %f", pose_x);
 
