@@ -95,7 +95,11 @@ public:
 
     void gps_callback(const geometry_msgs::PoseStamped::ConstPtr& msg)
     {
-        ROS_WARN("Got GPS data");
+        //ROS_WARN("Got GPS data");
+
+        initialized = false;    // add
+        gps_ready = false;
+
         gps_x = msg->pose.position.x;
         gps_y = msg->pose.position.y;
         tf::Quaternion q(
@@ -119,68 +123,116 @@ public:
 
     void map_callback(const sensor_msgs::PointCloud2::ConstPtr& msg)
     {
-        ROS_WARN("Got Map Pointcloud");
+        //ROS_WARN("Got Map Pointcloud");
         pcl::fromROSMsg(*msg, *map_pc);
         map_ready = true;
     }
 
     void radar_pc_callback(const sensor_msgs::PointCloud2::ConstPtr& msg)
     {   
-        ROS_WARN("Got Radar Pointcloud");
+        //ROS_WARN("Got Radar Pointcloud");
         pcl::PointCloud<pcl::PointXYZI>::Ptr radar_pc(new pcl::PointCloud<pcl::PointXYZI>);
         pcl::PointCloud<pcl::PointXYZI>::Ptr output_pc(new pcl::PointCloud<pcl::PointXYZI>);
         pcl::fromROSMsg(*msg, *radar_pc);
-        ROS_INFO("point size: %d", radar_pc->width);
+        //ROS_INFO("point size: %d", radar_pc->width);
 
         while(!(map_ready && gps_ready))
         { 
-            ROS_WARN("Wait for map and gps ready");
+            //ROS_WARN("Wait for map and gps ready");
             ros::Duration(0.1).sleep();
             ros::spinOnce();
         }
 
         if (!initialized)
         {
-            set_init_guess(pose_x, pose_y, pose_y);
+            pcl::PointCloud<pcl::PointXYZI>::Ptr pc(new pcl::PointCloud<pcl::PointXYZI>);
 
+            float search_range = 3.0;
+            float best_x, best_y, best_yaw = 0;
+            float min_scores = 1000;
+                for(float x = pose_x - search_range; x <= pose_x + search_range; x += 3){
+                    for(float y = pose_y - search_range; y <= pose_y + search_range; y += 3){
+                        *pc = *radar_pc;
+                        set_init_guess(x, y, pose_yaw);
+                        pcl::transformPointCloud(*pc, *pc, init_guess);
+
+                        pcl::IterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI> icp_init;
+                        icp_init.setInputSource(pc);
+                        icp_init.setInputTarget(map_pc);
+
+                        icp_init.setMaximumIterations(500);
+                        icp_init.setMaxCorrespondenceDistance(1.5);
+                        icp_init.setEuclideanFitnessEpsilon(1);
+
+                        icp_init.align(*output_pc);
+
+                        if( icp_init.getFitnessScore() < min_scores && icp_init.hasConverged()){
+                            min_scores = icp_init.getFitnessScore();
+                            best_x = x;
+                            best_y = y;
+                        }
+                    }
+                }
+
+
+            ROS_WARN("MIN SCORES = %d", cnt);
+
+            set_init_guess(best_x, best_y, pose_yaw);
             initialized = true;
         }
 
-        /*TODO : Implenment any scan matching base on initial guess, ICP, NDT, etc. */
-        /*TODO : Assign the result to pose_x, pose_y, pose_yaw */
-        /*TODO : Use result as next time initial guess */
-
         pcl::transformPointCloud(*radar_pc, *radar_pc, init_guess);
 
-        // icp
-        pcl::IterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI> icp;
-        icp.setInputSource(radar_pc);
-        icp.setInputTarget(map_pc);
+        // icp Rough Matching
+        pcl::IterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI> icp_R;
+        icp_R.setInputSource(radar_pc);
+        icp_R.setInputTarget(map_pc);
 
-        icp.setMaximumIterations(500);
-        icp.setMaxCorrespondenceDistance(3);
-        icp.setEuclideanFitnessEpsilon(0.2);
+        icp_R.setMaximumIterations(800);
+        icp_R.setMaxCorrespondenceDistance(3);
+        icp_R.setEuclideanFitnessEpsilon(1);
 
-        icp.align(*output_pc);
+        icp_R.align(*output_pc);
 
-        if (icp.hasConverged()) {
-            //std::cout << "ICP converged. Transformation matrix:\n" << icp_1.getFinalTransformation() << std::endl;
-            ROS_WARN("ICP converged. Fitness score: %f", icp.getFitnessScore());
+        if (icp_R.hasConverged()) {
+            std::cout << "ICP Rough Matching converged. Transformation matrix:\n" << icp_R.getFinalTransformation() << std::endl;
+            ROS_WARN("ICP Rough Matching converged. Fitness score: %f", icp_R.getFitnessScore());
 
             // Extract pose information from the transformation matrix
-            pose_x -= icp.getFinalTransformation()(0, 3);
-            pose_y -= icp.getFinalTransformation()(1, 3);
+            pose_x = pose_x + icp_R.getFinalTransformation()(0, 3);
+            pose_y = pose_y + icp_R.getFinalTransformation()(1, 3);
 
             // Extract yaw (rotation around the z-axis) using Euler angles
-            pose_yaw -= atan2(icp.getFinalTransformation()(1, 0), icp.getFinalTransformation()(0, 0));
+            pose_yaw = pose_yaw + atan2(icp_R.getFinalTransformation()(1, 0), icp_R.getFinalTransformation()(0, 0));
 
             set_init_guess(pose_x, pose_y, pose_yaw);
 
         } else {
-            std::cout << "ICP did not converge." << std::endl;
+            std::cout << "ICP Rough Matching did not converge." << std::endl;
             return;
         }
-      
+
+        // icp Fine Matching
+        pcl::IterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI> icp_F;
+        icp_F.setInputSource(output_pc);
+        icp_F.setInputTarget(map_pc);
+
+        icp_F.setMaximumIterations(500);
+        icp_F.setMaxCorrespondenceDistance(1.5);
+        icp_F.setEuclideanFitnessEpsilon(0.5);
+
+        icp_F.align(*output_pc);
+
+        if (icp_F.hasConverged()) {
+            std::cout << "ICP Fine Matching converged. Transformation matrix:\n" << icp_F.getFinalTransformation() << std::endl;
+            ROS_WARN("ICP Fine Matching converged. Fitness score: %f", icp_F.getFitnessScore());
+        } else {
+            std::cout << "ICP Fine Matching did not converge." << std::endl;
+            return;
+        }
+
+        //ROS_WARN("pose_x = %f", pose_x);
+
         tf_brocaster(pose_x, pose_y, pose_yaw);
         radar_pose_publisher(pose_x, pose_y, pose_yaw);
 
@@ -248,7 +300,7 @@ public:
         init_guess(1, 1) = cos(yaw);
         init_guess(1, 3) = y;
 
-        ROS_WARN("set init_guess ");
+        //ROS_WARN("set init_guess ");
     }
 };
 
