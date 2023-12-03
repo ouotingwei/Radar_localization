@@ -30,8 +30,6 @@ pcl::PointCloud<pcl::PointXYZI>::Ptr create_radar_pc(Mat img)
     pcl::PointCloud<pcl::PointXYZI>::Ptr new_pc(new pcl::PointCloud<pcl::PointXYZI>);
     pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_pc(new pcl::PointCloud<pcl::PointXYZI>);
 
-
-    
     /*TODO : Transform Polar Image to Cartesian Pointcloud*/
     for(int col=0; col<img.cols; col++)
     {

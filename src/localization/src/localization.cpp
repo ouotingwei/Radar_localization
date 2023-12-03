@@ -137,7 +137,7 @@ public:
         pcl::fromROSMsg(*msg, *radar_pc);
         //ROS_INFO("point size: %d", radar_pc->width);
 
-        float search_range = 4;
+        float search_range = 2;
         float best_x, best_y, best_yaw = 0;
         float min_scores = 1000;
 
@@ -150,29 +150,29 @@ public:
 
         if (!initialized)
         {
-                for(float x = pose_x - search_range; x <= pose_x + search_range; x += 2){
-                    for(float y = pose_y - search_range; y <= pose_y + search_range; y += 2){
-                        pcl::copyPointCloud(*radar_pc, *pc);
-                        set_init_guess(x, y, pose_yaw);
-                        pcl::transformPointCloud(*pc, *pc, init_guess);
+            for(float x = pose_x - search_range; x <= pose_x + search_range; x += 2){
+                for(float y = pose_y - search_range; y <= pose_y + search_range; y += 2){
+                    pcl::copyPointCloud(*radar_pc, *pc);
+                    set_init_guess(x, y, pose_yaw);
+                    pcl::transformPointCloud(*pc, *pc, init_guess);
 
-                        pcl::IterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI> icp_init;
-                        icp_init.setInputSource(pc);
-                        icp_init.setInputTarget(map_pc);
+                    pcl::IterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI> icp_init;
+                    icp_init.setInputSource(pc);
+                    icp_init.setInputTarget(map_pc);
 
-                        icp_init.setMaximumIterations(500);
-                        icp_init.setMaxCorrespondenceDistance(1.5);
-                        icp_init.setEuclideanFitnessEpsilon(0.2);
+                    //icp_init.setMaximumIterations(500);
+                    icp_init.setMaxCorrespondenceDistance(2);
+                    //icp_init.setEuclideanFitnessEpsilon(0.1);
 
-                        icp_init.align(*output_pc);
+                    icp_init.align(*output_pc);
 
-                        if( icp_init.getFitnessScore() < min_scores && icp_init.hasConverged()){
-                            min_scores = icp_init.getFitnessScore();
-                            best_x = x;
-                            best_y = y;
-                        }
+                    if( icp_init.getFitnessScore() < min_scores && icp_init.hasConverged()){
+                        min_scores = icp_init.getFitnessScore();
+                        best_x = x;
+                        best_y = y;
                     }
                 }
+            }
 
             set_init_guess(best_x, best_y, pose_yaw);
             pose_x = best_x;
@@ -188,8 +188,8 @@ public:
         icp_R.setInputTarget(map_pc);
 
         //icp_R.setMaximumIterations(100);
-        icp_R.setMaxCorrespondenceDistance(3);
-        //icp_R.setEuclideanFitnessEpsilon(2);
+        icp_R.setMaxCorrespondenceDistance(6);
+        //icp_R.setEuclideanFitnessEpsilon(3);
 
         icp_R.align(*output_pc);
 
@@ -200,11 +200,11 @@ public:
             // Extract pose information from the transformation matrix
             if(abs(icp_R.getFinalTransformation()(1, 3)) < 2 )
             {
-                pose_y = pose_y + icp_R.getFinalTransformation()(1, 3);
+                pose_y += icp_R.getFinalTransformation()(1, 3);
 
                 if(icp_R.getFinalTransformation()(0, 3) < 0)
                 {
-                    pose_x = pose_x + icp_R.getFinalTransformation()(0, 3);
+                    pose_x += icp_R.getFinalTransformation()(0, 3);
                 }
                 else
                 {
@@ -214,9 +214,10 @@ public:
             else
             {
                 pose_y = pose_y ;
+
                 if(icp_R.getFinalTransformation()(0, 3) < 0)
                 {
-                    pose_x = pose_x + icp_R.getFinalTransformation()(0, 3);
+                    pose_x += icp_R.getFinalTransformation()(0, 3);
                 }
                 else
                 {
