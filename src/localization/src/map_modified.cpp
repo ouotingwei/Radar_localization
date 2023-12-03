@@ -97,7 +97,7 @@ void pub_all()
 
             pass.setInputCloud(cloud);
             pass.setFilterFieldName("z");
-            pass.setFilterLimits(z_min+1, z_min+3);
+            pass.setFilterLimits(z_min+2, z_min+2.3);
             pass.setFilterLimitsNegative(false);
             pass.filter(*cloud);
             
@@ -110,6 +110,8 @@ void pub_all()
             cloud->width = 1;
             cloud->height = cloud->points.size();
             *sum += *cloud;
+            *sum += *cloud; //add
+            cout << i << ", " << j << " : " << z_min << " " << sum->points.size() <<  endl;      
             
             if(cloud->points.size() != 0)
             {

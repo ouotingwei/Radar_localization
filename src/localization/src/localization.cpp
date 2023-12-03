@@ -150,8 +150,8 @@ public:
 
         if (!initialized)
         {
-            for(float x = pose_x - search_range; x <= pose_x + search_range; x += 2){
-                for(float y = pose_y - search_range; y <= pose_y + search_range; y += 2){
+            for(float x = pose_x - search_range; x <= pose_x + search_range; x += 4){
+                for(float y = pose_y - search_range; y <= pose_y + search_range; y += 4){
                     pcl::copyPointCloud(*radar_pc, *pc);
                     set_init_guess(x, y, pose_yaw);
                     pcl::transformPointCloud(*pc, *pc, init_guess);
@@ -188,7 +188,7 @@ public:
         icp_R.setInputTarget(map_pc);
 
         //icp_R.setMaximumIterations(100);
-        icp_R.setMaxCorrespondenceDistance(6);
+        icp_R.setMaxCorrespondenceDistance(3);
         //icp_R.setEuclideanFitnessEpsilon(3);
 
         icp_R.align(*output_pc);
@@ -204,7 +204,7 @@ public:
 
                 if(icp_R.getFinalTransformation()(0, 3) < 0)
                 {
-                    pose_x += icp_R.getFinalTransformation()(0, 3);
+                    pose_x += icp_R.getFinalTransformation()(0, 3) ;
                 }
                 else
                 {
@@ -213,11 +213,11 @@ public:
             }
             else
             {
-                pose_y = pose_y ;
+                pose_y = pose_y;
 
                 if(icp_R.getFinalTransformation()(0, 3) < 0)
                 {
-                    pose_x += icp_R.getFinalTransformation()(0, 3);
+                    pose_x += icp_R.getFinalTransformation()(0, 3) ;
                 }
                 else
                 {
@@ -235,40 +235,6 @@ public:
             std::cout << "ICP Rough Matching did not converge." << std::endl;
             return;
         }
-
-        /*
-        // icp Fine Matching
-        pcl::IterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI> icp_F;
-        icp_F.setInputSource(output_pc);
-        icp_F.setInputTarget(map_pc);
-
-        icp_F.setMaximumIterations(400);
-        icp_F.setMaxCorrespondenceDistance(1);
-        icp_F.setEuclideanFitnessEpsilon(0.1);
-
-        icp_F.align(*output_pc);
-
-        if (icp_F.hasConverged()) {
-            std::cout << "ICP Fine Matching converged. Transformation matrix:\n" << icp_F.getFinalTransformation() << std::endl;
-            ROS_WARN("ICP Fine Matching converged. Fitness score: %f", icp_F.getFitnessScore());
-
-            // Extract pose information from the transformation matrix
-            pose_x = pose_x + icp_R.getFinalTransformation()(0, 3);
-            pose_y = pose_y + icp_R.getFinalTransformation()(1, 3);
-
-            // Extract yaw (rotation around the z-axis) using Euler angles
-            pose_yaw = pose_yaw + atan2(icp_R.getFinalTransformation()(1, 0), icp_R.getFinalTransformation()(0, 0));
-
-            set_init_guess(pose_x, pose_y, pose_yaw);
-            
-        } else {
-            std::cout << "ICP Fine Matching did not converge." << std::endl;
-            return;
-        }
-        */
-        
-
-        //ROS_WARN("pose_x = %f", pose_x);
 
         tf_brocaster(pose_x, pose_y, pose_yaw);
         radar_pose_publisher(pose_x, pose_y, pose_yaw);
@@ -344,10 +310,15 @@ public:
 
 int main(int argc, char** argv) 
 {
-    ros::init (argc, argv, "localizer");
+    ros::init(argc, argv, "localizer");
     ros::NodeHandle nh;
-    Localizer Localizer(nh);
 
-    ros::spin();
+    Localizer localizer(nh);
+
+    ros::AsyncSpinner spinner(4); 
+    spinner.start();
+
+    ros::waitForShutdown();
+
     return 0;
 }
