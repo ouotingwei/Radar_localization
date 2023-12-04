@@ -24,6 +24,8 @@
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
 #include <nav_msgs/Path.h>
 
+#include "KF.cpp"
+
 using namespace std;
 
 class Localizer
@@ -150,8 +152,8 @@ public:
 
         if (!initialized)
         {
-            for(float x = pose_x - search_range; x <= pose_x + search_range; x += 4){
-                for(float y = pose_y - search_range; y <= pose_y + search_range; y += 4){
+            for(float x = pose_x - search_range; x <= pose_x + search_range; x += 2){
+                for(float y = pose_y - search_range; y <= pose_y + search_range; y += 2){
                     pcl::copyPointCloud(*radar_pc, *pc);
                     set_init_guess(x, y, pose_yaw);
                     pcl::transformPointCloud(*pc, *pc, init_guess);
@@ -190,41 +192,37 @@ public:
         //icp_R.setMaximumIterations(100);
         icp_R.setMaxCorrespondenceDistance(3);
         //icp_R.setEuclideanFitnessEpsilon(3);
+        //icp_R.setTransformationEpsilon(1);  // 可以根据需要调整参数
 
-        icp_R.align(*output_pc);
+        Eigen::Matrix4f constraint = Eigen::Matrix4f::Identity();
+        constraint(0, 3) = std::max(0.0f, constraint(0, 3));  // 不允许往负 x 轴方向平移
+        
+        float maxYTranslation = 1.0f;
+        constraint(1, 3) = std::max(-maxYTranslation, std::min(maxYTranslation, constraint(1, 3)));
+
+        icp_R.align(*output_pc, constraint);
+
+        //kf
 
         if (icp_R.hasConverged()) {
             std::cout << "ICP Rough Matching converged. Transformation matrix:\n" << icp_R.getFinalTransformation() << std::endl;
             ROS_WARN("ICP Rough Matching converged. Fitness score: %f", icp_R.getFitnessScore());
 
-            // Extract pose information from the transformation matrix
-            if(abs(icp_R.getFinalTransformation()(1, 3)) < 2 )
-            {
-                pose_y += icp_R.getFinalTransformation()(1, 3);
-
-                if(icp_R.getFinalTransformation()(0, 3) < 0)
-                {
-                    pose_x += icp_R.getFinalTransformation()(0, 3) ;
-                }
-                else
-                {
-                    //pose_x = pose_x + icp_R.getFinalTransformation()(0, 3);
-                }
+            if (pose_x < 0.0) {
+                pose_x += icp_R.getFinalTransformation()(0, 3);   
             }
-            else
-            {
+
+            if (pose_y > 2.0) {
                 pose_y = pose_y;
-
-                if(icp_R.getFinalTransformation()(0, 3) < 0)
-                {
-                    pose_x += icp_R.getFinalTransformation()(0, 3) ;
-                }
-                else
-                {
-                    //pose_x = pose_x + icp_R.getFinalTransformation()(0, 3);
-                }
+            } else {
+                pose_y += icp_R.getFinalTransformation()(1, 3);
             }
-            
+
+            if (pose_y < -2.0) {
+                pose_y = pose_y;
+            } else {
+                pose_y += icp_R.getFinalTransformation()(1, 3);
+            }
 
             // Extract yaw (rotation around the z-axis) using Euler angles
             pose_yaw = pose_yaw + atan2(icp_R.getFinalTransformation()(1, 0), icp_R.getFinalTransformation()(0, 0));
