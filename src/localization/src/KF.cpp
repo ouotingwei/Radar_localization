@@ -1,6 +1,7 @@
 #include <iostream>
 #include <cmath>
 #include <Eigen/Dense>
+#include <random>
 
 class ExtendedKalmanFilter {
 public:
@@ -39,6 +40,17 @@ public:
         // Calculate Jacobian matrix of the model as A
         // u = [del_x, del_y, del_yaw]
 
+        //setting the random noise R
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::normal_distribution<double> distribution(0.0, std::sqrt(2.25));
+
+        for (int i = 0; i < R.rows(); ++i) {
+            for (int j = 0; j < R.cols(); ++j) {
+                R(i, j) = distribution(gen);
+            }
+        }
+
         B << std::cos(pose[2]), -std::sin(pose[2]), 0,
              std::sin(pose[2]), std::cos(pose[2]), 0,
              0, 0, 1;  // setting the motion transition matrix
@@ -56,6 +68,17 @@ public:
         // Implement a linear or nonlinear observation matrix for the measurement input
         // Calculate Jacobian matrix of the matrix as C
         // z = [x, y, yaw]
+
+        //setting the random noise S
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::normal_distribution<double> distribution(0.0, std::sqrt(2.25));
+
+        for (int i = 0; i < S.rows(); ++i) {
+            for (int j = 0; j < S.cols(); ++j) {
+                S(i, j) = distribution(gen);
+            }
+        }
 
         // I choose the linear model to update the pose & state
 

@@ -3,6 +3,8 @@
 #include <iostream>
 #include <cmath>
 #include <limits>
+#include <Eigen/Dense>
+#include <random>
 
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
@@ -24,10 +26,103 @@
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
 #include <nav_msgs/Path.h>
 
-#include "KF.cpp"
-
 using namespace std;
 
+// ekf class
+class ExtendedKalmanFilter {
+public:
+    ExtendedKalmanFilter(double x = 0, double y = 0, double yaw = 0) {
+        // Define what state to be estimate
+        // Ex.
+        //   only pose -> Eigen::Vector3d(x, y, yaw)
+        //   with velocity -> Eigen::Vector6d(x, y, yaw, vx, vy, vyaw)
+        //   etc...
+        pose << x, y, yaw;   // only pose
+
+        // Transition matrix
+        A = Eigen::Matrix3d::Identity(); // jacobian matrix
+        B = Eigen::Matrix3d::Identity(); // motion transition matrix
+
+        // State covariance matrix
+        S = Eigen::Matrix3d::Identity() * 1;
+
+        // Observation matrix
+        C << 1, 0, 0,
+             0, 1, 0,
+             0, 0, 1;
+
+        // State transition error
+        R = Eigen::Matrix3d::Identity() * 1;
+
+        // Measurement error
+        Q = Eigen::Matrix3d::Identity() * 1;
+        
+        std::cout << "Initialize Kalman Filter" << std::endl;
+    }
+
+    Eigen::Vector3d predict(const Eigen::Vector3d& u) {
+        // Base on the Kalman Filter design in Assignment 3
+        // Implement a linear or nonlinear motion model for the control input
+        // Calculate Jacobian matrix of the model as A
+        // u = [del_x, del_y, del_yaw]
+
+        //setting the random noise R
+        R(0, 0) = 1;
+        R(1, 1) = 1;
+        R(2, 2) = 0.05;
+
+        R = R * 100;
+
+        B << std::cos(pose[2]), -std::sin(pose[2]), 0,
+             std::sin(pose[2]), std::cos(pose[2]), 0,
+             0, 0, 1;  // setting the motion transition matrix
+
+        A << 1, 0, -std::sin(pose[2]) * u[0] - std::cos(pose[2]) * u[1],
+             0, 1, std::cos(pose[2]) * u[0] - std::sin(pose[2]) * u[1],
+             0, 0, 1;  // setting the jacobian matrix
+
+        pose += B * u; // motion model
+        S = A * S * A.transpose();    // state （+R）
+
+        return pose;
+    }
+
+    Eigen::Vector3d update(const Eigen::Vector3d& z) {
+        // Base on the Kalman Filter design in Assignment 3
+        // Implement a linear or nonlinear observation matrix for the measurement input
+        // Calculate Jacobian matrix of the matrix as C
+        // z = [x, y, yaw]
+
+        //setting the random noise S
+        std::random_device rd;
+        std::mt19937 gen(rd());
+
+        std::normal_distribution<double> translationNoise(0.0, std::sqrt(2.25));
+        std::normal_distribution<double> rotationNoise(0.0, std::sqrt(0.44));
+
+        // Apply random noise to the corresponding elements of S matrix
+        Q(0, 0) = 2.25;
+        Q(1, 1) = 2.25;
+        Q(2, 2) = 0.44;
+
+        Q = Q*10000;
+
+        // I choose the linear model to update the pose & state
+
+        Eigen::Matrix3d K = S * C.transpose() * (C * S * C.transpose() + Q).inverse();
+        pose = pose + K * (z - C * pose);
+        S = (Eigen::Matrix3d::Identity() - K * C) * S;
+
+        return pose;
+    }
+
+private:
+    Eigen::Vector3d pose;
+    Eigen::Matrix3d A, B, S, R, Q;
+    Eigen::Matrix3d C;
+};
+
+// localizer class
 class Localizer
 {
 private:
@@ -67,6 +162,13 @@ private:
     bool gps_ready = false;
     bool initialized = false;
 
+    Eigen::Vector3d gps_measurement;
+    Eigen::Vector3d icp_control;
+
+    Eigen::Vector3d predict_pose;
+
+    ExtendedKalmanFilter ekf;
+
 public:
     Localizer(ros::NodeHandle nh) : map_pc(new pcl::PointCloud<pcl::PointXYZI>)
     {
@@ -87,6 +189,7 @@ public:
         radar_pc_pub = _nh.advertise<sensor_msgs::PointCloud2>("/tranformed_radar_pc", 1);
         radar_pose_pub = _nh.advertise<geometry_msgs::PoseStamped>("/tranformed_radar_pose", 1);
         path_pub = _nh.advertise<nav_msgs::Path>("/localization_path", 1);
+
     }
 
     ~Localizer()
@@ -98,9 +201,6 @@ public:
     void gps_callback(const geometry_msgs::PoseStamped::ConstPtr& msg)
     {
         //ROS_WARN("Got GPS data");
-
-        initialized = false;    // add
-        gps_ready = false;
 
         gps_x = msg->pose.position.x;
         gps_y = msg->pose.position.y;
@@ -114,12 +214,20 @@ public:
         double r, p, yaw;
         m.getRPY(r, p, yaw);
         gps_yaw = yaw;
+
         if(!gps_ready)
         {
             pose_x = gps_x;
             pose_y = gps_y;
             pose_yaw = gps_yaw;
+            ekf = ExtendedKalmanFilter(pose_x, pose_y, pose_yaw);
             gps_ready = true;
+        }else{
+            gps_measurement << gps_x, gps_y, gps_yaw;       // add
+            Eigen::Vector3d update_pose = ekf.update(gps_measurement);
+            pose_x = update_pose[0];
+            pose_y = update_pose[1];
+            pose_yaw = update_pose[2];
         }
     }
 
@@ -152,33 +260,7 @@ public:
 
         if (!initialized)
         {
-            for(float x = pose_x - search_range; x <= pose_x + search_range; x += 2){
-                for(float y = pose_y - search_range; y <= pose_y + search_range; y += 2){
-                    pcl::copyPointCloud(*radar_pc, *pc);
-                    set_init_guess(x, y, pose_yaw);
-                    pcl::transformPointCloud(*pc, *pc, init_guess);
-
-                    pcl::IterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI> icp_init;
-                    icp_init.setInputSource(pc);
-                    icp_init.setInputTarget(map_pc);
-
-                    //icp_init.setMaximumIterations(500);
-                    icp_init.setMaxCorrespondenceDistance(2);
-                    //icp_init.setEuclideanFitnessEpsilon(0.1);
-
-                    icp_init.align(*output_pc);
-
-                    if( icp_init.getFitnessScore() < min_scores && icp_init.hasConverged()){
-                        min_scores = icp_init.getFitnessScore();
-                        best_x = x;
-                        best_y = y;
-                    }
-                }
-            }
-
-            set_init_guess(best_x, best_y, pose_yaw);
-            pose_x = best_x;
-            pose_y = best_y;
+            set_init_guess(pose_x, pose_y, pose_yaw);
             initialized = true;
         }
 
@@ -192,40 +274,28 @@ public:
         //icp_R.setMaximumIterations(100);
         icp_R.setMaxCorrespondenceDistance(3);
         //icp_R.setEuclideanFitnessEpsilon(3);
-        //icp_R.setTransformationEpsilon(1);  // 可以根据需要调整参数
 
         Eigen::Matrix4f constraint = Eigen::Matrix4f::Identity();
-        constraint(0, 3) = std::max(0.0f, constraint(0, 3));  // 不允许往负 x 轴方向平移
+        constraint(0, 3) = std::max(0.0f, constraint(0, 3));
         
         float maxYTranslation = 1.0f;
         constraint(1, 3) = std::max(-maxYTranslation, std::min(maxYTranslation, constraint(1, 3)));
 
         icp_R.align(*output_pc, constraint);
 
-        //kf
-
         if (icp_R.hasConverged()) {
             std::cout << "ICP Rough Matching converged. Transformation matrix:\n" << icp_R.getFinalTransformation() << std::endl;
             ROS_WARN("ICP Rough Matching converged. Fitness score: %f", icp_R.getFitnessScore());
-
-            if (pose_x < 0.0) {
-                pose_x += icp_R.getFinalTransformation()(0, 3);   
-            }
-
-            if (pose_y > 2.0) {
-                pose_y = pose_y;
-            } else {
-                pose_y += icp_R.getFinalTransformation()(1, 3);
-            }
-
-            if (pose_y < -2.0) {
-                pose_y = pose_y;
-            } else {
-                pose_y += icp_R.getFinalTransformation()(1, 3);
-            }
-
-            // Extract yaw (rotation around the z-axis) using Euler angles
-            pose_yaw = pose_yaw + atan2(icp_R.getFinalTransformation()(1, 0), icp_R.getFinalTransformation()(0, 0));
+            
+            float delta_x = icp_R.getFinalTransformation()(0, 3);
+            float delta_y = icp_R.getFinalTransformation()(1, 3);   
+            float delta_yaw = atan2(icp_R.getFinalTransformation()(1, 0), icp_R.getFinalTransformation()(0, 0));
+            
+            icp_control << delta_x, delta_y, delta_yaw;
+            predict_pose = ekf.predict(Eigen::Vector3d(icp_control[0], icp_control[1], icp_control[2]));
+            pose_x = predict_pose[0];
+            pose_y = predict_pose[1];
+            pose_yaw = predict_pose[2] + M_PI/2;
 
             set_init_guess(pose_x, pose_y, pose_yaw);
 
