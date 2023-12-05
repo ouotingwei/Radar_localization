@@ -97,7 +97,7 @@ void pub_all()
 
             pass.setInputCloud(cloud);
             pass.setFilterFieldName("z");
-            pass.setFilterLimits(z_min+1.75, z_min+4.5);
+            pass.setFilterLimits(z_min+1.75, z_min+4.2);
             pass.setFilterLimitsNegative(false);
             pass.filter(*cloud);
             

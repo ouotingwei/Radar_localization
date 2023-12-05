@@ -1,8 +1,10 @@
 #include <iostream>
 #include <cmath>
+#include <limits>
 #include <Eigen/Dense>
 #include <random>
 
+// ekf class
 class ExtendedKalmanFilter {
 public:
     ExtendedKalmanFilter(double x = 0, double y = 0, double yaw = 0) {
@@ -34,22 +36,20 @@ public:
         std::cout << "Initialize Kalman Filter" << std::endl;
     }
 
-    void predict(const Eigen::Vector3d& u) {
+    Eigen::Vector3d predict(const Eigen::Vector3d& u) {
         // Base on the Kalman Filter design in Assignment 3
         // Implement a linear or nonlinear motion model for the control input
         // Calculate Jacobian matrix of the model as A
         // u = [del_x, del_y, del_yaw]
-
+        
+        /*
+        // NON-LINEAR
         //setting the random noise R
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::normal_distribution<double> distribution(0.0, std::sqrt(2.25));
+        R(0, 0) = 0;
+        R(1, 1) = 0;
+        R(2, 2) = 0;
 
-        for (int i = 0; i < R.rows(); ++i) {
-            for (int j = 0; j < R.cols(); ++j) {
-                R(i, j) = distribution(gen);
-            }
-        }
+        R = R * 100;
 
         B << std::cos(pose[2]), -std::sin(pose[2]), 0,
              std::sin(pose[2]), std::cos(pose[2]), 0,
@@ -60,7 +60,20 @@ public:
              0, 0, 1;  // setting the jacobian matrix
 
         pose += B * u; // motion model
-        S = A * S * A.transpose() + R;    // state
+        S = A * S * A.transpose() + R;    // state （+R）
+        */
+
+        R(0, 0) = 2;
+        R(1, 1) = 2;
+        R(2, 2) = 0.01;
+
+        R = R * 1;
+
+        pose += u;
+
+        S = A * S * A.transpose() + R;
+
+        return pose;
     }
 
     Eigen::Vector3d update(const Eigen::Vector3d& z) {
@@ -69,16 +82,12 @@ public:
         // Calculate Jacobian matrix of the matrix as C
         // z = [x, y, yaw]
 
-        //setting the random noise S
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::normal_distribution<double> distribution(0.0, std::sqrt(2.25));
+        // Apply random noise to the corresponding elements of S matrix
+        Q(0, 0) = 2.25;
+        Q(1, 1) = 2.25;
+        Q(2, 2) = 0.44;
 
-        for (int i = 0; i < S.rows(); ++i) {
-            for (int j = 0; j < S.cols(); ++j) {
-                S(i, j) = distribution(gen);
-            }
-        }
+        Q = Q*100;
 
         // I choose the linear model to update the pose & state
 

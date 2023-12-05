@@ -26,107 +26,10 @@
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
 #include <nav_msgs/Path.h>
 
+#include"KF.cpp"
+#include"slidewindow.cpp"
+
 using namespace std;
-
-// ekf class
-class ExtendedKalmanFilter {
-public:
-    ExtendedKalmanFilter(double x = 0, double y = 0, double yaw = 0) {
-        // Define what state to be estimate
-        // Ex.
-        //   only pose -> Eigen::Vector3d(x, y, yaw)
-        //   with velocity -> Eigen::Vector6d(x, y, yaw, vx, vy, vyaw)
-        //   etc...
-        pose << x, y, yaw;   // only pose
-
-        // Transition matrix
-        A = Eigen::Matrix3d::Identity(); // jacobian matrix
-        B = Eigen::Matrix3d::Identity(); // motion transition matrix
-
-        // State covariance matrix
-        S = Eigen::Matrix3d::Identity() * 1;
-
-        // Observation matrix
-        C << 1, 0, 0,
-             0, 1, 0,
-             0, 0, 1;
-
-        // State transition error
-        R = Eigen::Matrix3d::Identity() * 1;
-
-        // Measurement error
-        Q = Eigen::Matrix3d::Identity() * 1;
-        
-        std::cout << "Initialize Kalman Filter" << std::endl;
-    }
-
-    Eigen::Vector3d predict(const Eigen::Vector3d& u) {
-        // Base on the Kalman Filter design in Assignment 3
-        // Implement a linear or nonlinear motion model for the control input
-        // Calculate Jacobian matrix of the model as A
-        // u = [del_x, del_y, del_yaw]
-        
-        /*
-        // NON-LINEAR
-        //setting the random noise R
-        R(0, 0) = 0;
-        R(1, 1) = 0;
-        R(2, 2) = 0;
-
-        R = R * 100;
-
-        B << std::cos(pose[2]), -std::sin(pose[2]), 0,
-             std::sin(pose[2]), std::cos(pose[2]), 0,
-             0, 0, 1;  // setting the motion transition matrix
-
-        A << 1, 0, -std::sin(pose[2]) * u[0] - std::cos(pose[2]) * u[1],
-             0, 1, std::cos(pose[2]) * u[0] - std::sin(pose[2]) * u[1],
-             0, 0, 1;  // setting the jacobian matrix
-
-        pose += B * u; // motion model
-        S = A * S * A.transpose() + R;    // state （+R）
-        */
-
-        R(0, 0) = 1;
-        R(1, 1) = 1;
-        R(2, 2) = 0.001;
-
-        R = R * 100;
-        
-        pose += u;
-
-        S = A * S * A.transpose() + R;
-
-        return pose;
-    }
-
-    Eigen::Vector3d update(const Eigen::Vector3d& z) {
-        // Base on the Kalman Filter design in Assignment 3
-        // Implement a linear or nonlinear observation matrix for the measurement input
-        // Calculate Jacobian matrix of the matrix as C
-        // z = [x, y, yaw]
-
-        // Apply random noise to the corresponding elements of S matrix
-        Q(0, 0) = 2.25;
-        Q(1, 1) = 2.25;
-        Q(2, 2) = 0.44;
-
-        Q = Q*1000;
-
-        // I choose the linear model to update the pose & state
-
-        Eigen::Matrix3d K = S * C.transpose() * (C * S * C.transpose() + Q).inverse();
-        pose = pose + K * (z - C * pose);
-        S = (Eigen::Matrix3d::Identity() - K * C) * S;
-
-        return pose;
-    }
-
-private:
-    Eigen::Vector3d pose;
-    Eigen::Matrix3d A, B, S, R, Q;
-    Eigen::Matrix3d C;
-};
 
 // localizer class
 class Localizer
@@ -174,9 +77,13 @@ private:
     Eigen::Vector3d predict_pose;
 
     ExtendedKalmanFilter ekf;
+    MovingAverageFilter ma_x;
+    MovingAverageFilter ma_y;
+    //MovingAverageFilter ma_y();
+    
 
 public:
-    Localizer(ros::NodeHandle nh) : map_pc(new pcl::PointCloud<pcl::PointXYZI>)
+    Localizer(ros::NodeHandle nh) : ma_x(10), ma_y(10), map_pc(new pcl::PointCloud<pcl::PointXYZI>)
     {
         map_ready = false;
         gps_ready = false;
@@ -278,8 +185,8 @@ public:
         icp_R.setInputTarget(map_pc);
 
         //icp_R.setMaximumIterations(100);
-        icp_R.setMaxCorrespondenceDistance(6);
-        //icp_R.setEuclideanFitnessEpsilon(3);
+        icp_R.setMaxCorrespondenceDistance(8);
+        //icp_R.setEuclideanFitnessEpsilon(1);
 
         Eigen::Matrix4f constraint = Eigen::Matrix4f::Identity();
         constraint(0, 3) = std::max(0.0f, constraint(0, 3));
@@ -292,8 +199,12 @@ public:
         if (icp_R.hasConverged()) {
             std::cout << "ICP Rough Matching converged. Transformation matrix:\n" << icp_R.getFinalTransformation() << std::endl;
             ROS_WARN("ICP Rough Matching converged. Fitness score: %f", icp_R.getFitnessScore());
-            
-            icp_control << icp_R.getFinalTransformation()(0, 3), icp_R.getFinalTransformation()(1, 3), atan2(icp_R.getFinalTransformation()(1, 0), icp_R.getFinalTransformation()(0, 0));
+
+            float filter_x = ma_x.update(icp_R.getFinalTransformation()(0, 3));
+            float filter_y = ma_y.update(icp_R.getFinalTransformation()(1, 3));
+
+            icp_control << filter_x, filter_y, atan2(icp_R.getFinalTransformation()(1, 0), icp_R.getFinalTransformation()(0, 0));
+
             predict_pose = ekf.predict(Eigen::Vector3d(icp_control[0], icp_control[1], icp_control[2]));
             pose_x = predict_pose[0];
             pose_y = predict_pose[1];
