@@ -3,8 +3,6 @@
 #include <iostream>
 #include <cmath>
 #include <limits>
-#include <Eigen/Dense>
-#include <random>
 
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
@@ -26,12 +24,8 @@
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
 #include <nav_msgs/Path.h>
 
-#include"KF.cpp"
-#include"slidewindow.cpp"
-
 using namespace std;
 
-// localizer class
 class Localizer
 {
 private:
@@ -71,19 +65,8 @@ private:
     bool gps_ready = false;
     bool initialized = false;
 
-    Eigen::Vector3d gps_measurement;
-    Eigen::Vector3d icp_control;
-
-    Eigen::Vector3d predict_pose;
-
-    ExtendedKalmanFilter ekf;
-    MovingAverageFilter ma_x;
-    MovingAverageFilter ma_y;
-    //MovingAverageFilter ma_y();
-    
-
 public:
-    Localizer(ros::NodeHandle nh) : ma_x(10), ma_y(10), map_pc(new pcl::PointCloud<pcl::PointXYZI>)
+    Localizer(ros::NodeHandle nh) : map_pc(new pcl::PointCloud<pcl::PointXYZI>)
     {
         map_ready = false;
         gps_ready = false;
@@ -102,7 +85,6 @@ public:
         radar_pc_pub = _nh.advertise<sensor_msgs::PointCloud2>("/tranformed_radar_pc", 1);
         radar_pose_pub = _nh.advertise<geometry_msgs::PoseStamped>("/tranformed_radar_pose", 1);
         path_pub = _nh.advertise<nav_msgs::Path>("/localization_path", 1);
-
     }
 
     ~Localizer()
@@ -114,6 +96,9 @@ public:
     void gps_callback(const geometry_msgs::PoseStamped::ConstPtr& msg)
     {
         //ROS_WARN("Got GPS data");
+
+        initialized = false;    // add
+        gps_ready = false;
 
         gps_x = msg->pose.position.x;
         gps_y = msg->pose.position.y;
@@ -127,20 +112,12 @@ public:
         double r, p, yaw;
         m.getRPY(r, p, yaw);
         gps_yaw = yaw;
-
         if(!gps_ready)
         {
             pose_x = gps_x;
             pose_y = gps_y;
             pose_yaw = gps_yaw;
-            ekf = ExtendedKalmanFilter(pose_x, pose_y, pose_yaw);
             gps_ready = true;
-        }else{
-            gps_measurement << gps_x, gps_y, gps_yaw;       // add
-            Eigen::Vector3d update_pose = ekf.update(gps_measurement);
-            pose_x = update_pose[0];
-            pose_y = update_pose[1];
-            pose_yaw = update_pose[2];
         }
     }
 
@@ -160,7 +137,7 @@ public:
         pcl::fromROSMsg(*msg, *radar_pc);
         //ROS_INFO("point size: %d", radar_pc->width);
 
-        float search_range = 2;
+        float search_range = 4;
         float best_x, best_y, best_yaw = 0;
         float min_scores = 1000;
 
@@ -173,11 +150,37 @@ public:
 
         if (!initialized)
         {
-            set_init_guess(pose_x, pose_y, pose_yaw);
+                for(float x = pose_x - search_range; x <= pose_x + search_range; x += 2){
+                    for(float y = pose_y - search_range; y <= pose_y + search_range; y += 2){
+                        pcl::copyPointCloud(*radar_pc, *pc);
+                        set_init_guess(x, y, pose_yaw);
+                        pcl::transformPointCloud(*pc, *pc, init_guess);
+
+                        pcl::IterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI> icp_init;
+                        icp_init.setInputSource(pc);
+                        icp_init.setInputTarget(map_pc);
+
+                        icp_init.setMaximumIterations(500);
+                        icp_init.setMaxCorrespondenceDistance(1.5);
+                        icp_init.setEuclideanFitnessEpsilon(0.2);
+
+                        icp_init.align(*output_pc);
+
+                        if( icp_init.getFitnessScore() < min_scores && icp_init.hasConverged()){
+                            min_scores = icp_init.getFitnessScore();
+                            best_x = x;
+                            best_y = y;
+                        }
+                    }
+                }
+
+            set_init_guess(best_x, best_y, pose_yaw);
+            pose_x = best_x;
+            pose_y = best_y;
             initialized = true;
         }
 
-        pcl::transformPointCloud(*radar_pc, *radar_pc, init_guess);
+        //pcl::transformPointCloud(*radar_pc, *radar_pc, init_guess);
         
         // icp Rough Matching
         pcl::IterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI> icp_R;
@@ -185,30 +188,21 @@ public:
         icp_R.setInputTarget(map_pc);
 
         //icp_R.setMaximumIterations(100);
-        icp_R.setMaxCorrespondenceDistance(8);
-        //icp_R.setEuclideanFitnessEpsilon(1);
+        icp_R.setMaxCorrespondenceDistance(6);
+        icp_R.setEuclideanFitnessEpsilon(1e-3);
+        icp_R.setTransformationEpsilon(1e-3);
 
-        Eigen::Matrix4f constraint = Eigen::Matrix4f::Identity();
-        constraint(0, 3) = std::max(0.0f, constraint(0, 3));
-        
-        float maxYTranslation = 1.0f;
-        constraint(1, 3) = std::max(-maxYTranslation, std::min(maxYTranslation, constraint(1, 3)));
-
-        icp_R.align(*output_pc, constraint);
+        icp_R.align(*output_pc, init_guess);
 
         if (icp_R.hasConverged()) {
             std::cout << "ICP Rough Matching converged. Transformation matrix:\n" << icp_R.getFinalTransformation() << std::endl;
             ROS_WARN("ICP Rough Matching converged. Fitness score: %f", icp_R.getFitnessScore());
 
-            float filter_x = ma_x.update(icp_R.getFinalTransformation()(0, 3));
-            float filter_y = ma_y.update(icp_R.getFinalTransformation()(1, 3));
-
-            icp_control << filter_x, filter_y, atan2(icp_R.getFinalTransformation()(1, 0), icp_R.getFinalTransformation()(0, 0));
-
-            predict_pose = ekf.predict(Eigen::Vector3d(icp_control[0], icp_control[1], icp_control[2]));
-            pose_x = predict_pose[0];
-            pose_y = predict_pose[1];
-            pose_yaw = predict_pose[2];
+            pose_x = icp_R.getFinalTransformation()(0, 3);
+            pose_y = icp_R.getFinalTransformation()(1, 3);
+        
+            // Extract yaw (rotation around the z-axis) using Euler angles
+            pose_yaw = atan2(icp_R.getFinalTransformation()(1, 0), icp_R.getFinalTransformation()(0, 0));
 
             set_init_guess(pose_x, pose_y, pose_yaw);
 
@@ -223,7 +217,7 @@ public:
         sensor_msgs::PointCloud2 radar_pc_msg;
         pcl::toROSMsg(*radar_pc, radar_pc_msg);
         radar_pc_msg.header.stamp = ros::Time::now();
-        radar_pc_msg.header.frame_id = "map";
+        radar_pc_msg.header.frame_id = "base_link";
         radar_pc_pub.publish(radar_pc_msg);
         ROS_INFO("Publish transformed pc");
         ROS_INFO("[seq %d] x:%.3f, y:%.3f, yaw:%.3f\n", seq, pose_x, pose_y, pose_yaw);
@@ -291,15 +285,10 @@ public:
 
 int main(int argc, char** argv) 
 {
-    ros::init(argc, argv, "localizer");
+    ros::init (argc, argv, "localizer");
     ros::NodeHandle nh;
+    Localizer Localizer(nh);
 
-    Localizer localizer(nh);
-
-    ros::AsyncSpinner spinner(4); 
-    spinner.start();
-
-    ros::waitForShutdown();
-
+    ros::spin();
     return 0;
 }
