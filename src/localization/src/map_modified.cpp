@@ -110,7 +110,6 @@ void pub_all()
             cloud->width = 1;
             cloud->height = cloud->points.size();
             *sum += *cloud;
-            *sum += *cloud; //add
             cout << i << ", " << j << " : " << z_min << " " << sum->points.size() <<  endl;      
             
             if(cloud->points.size() != 0)

@@ -87,9 +87,9 @@ public:
         S = A * S * A.transpose() + R;    // state （+R）
         */
 
-        R(0, 0) = 0;
-        R(1, 1) = 0;
-        R(2, 2) = 0;
+        R(0, 0) = 1;
+        R(1, 1) = 1;
+        R(2, 2) = 0.001;
 
         R = R * 100;
         
@@ -111,7 +111,7 @@ public:
         Q(1, 1) = 2.25;
         Q(2, 2) = 0.44;
 
-        Q = Q*10;
+        Q = Q*1000;
 
         // I choose the linear model to update the pose & state
 
@@ -278,7 +278,7 @@ public:
         icp_R.setInputTarget(map_pc);
 
         //icp_R.setMaximumIterations(100);
-        icp_R.setMaxCorrespondenceDistance(3);
+        icp_R.setMaxCorrespondenceDistance(6);
         //icp_R.setEuclideanFitnessEpsilon(3);
 
         Eigen::Matrix4f constraint = Eigen::Matrix4f::Identity();
@@ -293,11 +293,7 @@ public:
             std::cout << "ICP Rough Matching converged. Transformation matrix:\n" << icp_R.getFinalTransformation() << std::endl;
             ROS_WARN("ICP Rough Matching converged. Fitness score: %f", icp_R.getFitnessScore());
             
-            float delta_x = icp_R.getFinalTransformation()(0, 3);
-            float delta_y = icp_R.getFinalTransformation()(1, 3);   
-            float delta_yaw = atan2(icp_R.getFinalTransformation()(1, 0), icp_R.getFinalTransformation()(0, 0));
-            
-            icp_control << delta_x, delta_y, delta_yaw;
+            icp_control << icp_R.getFinalTransformation()(0, 3), icp_R.getFinalTransformation()(1, 3), atan2(icp_R.getFinalTransformation()(1, 0), icp_R.getFinalTransformation()(0, 0));
             predict_pose = ekf.predict(Eigen::Vector3d(icp_control[0], icp_control[1], icp_control[2]));
             pose_x = predict_pose[0];
             pose_y = predict_pose[1];

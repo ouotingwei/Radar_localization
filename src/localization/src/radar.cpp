@@ -42,7 +42,7 @@ pcl::PointCloud<pcl::PointXYZI>::Ptr create_radar_pc(Mat img)
         {   
             pcl::PointXYZI point;
 
-            if(row > 4 && img.at<uchar>(row, col) > 75)
+            if(row > 4 && img.at<uchar>(row, col) > 80)
             {
                 // Calculate distance from the origin (circle center)
                 double distance = static_cast<double>(row) * range_resolution;
