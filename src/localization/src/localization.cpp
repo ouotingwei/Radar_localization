@@ -24,6 +24,8 @@
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
 #include <nav_msgs/Path.h>
 
+#include"slidewindow.cpp"
+
 using namespace std;
 
 class Localizer
@@ -65,8 +67,14 @@ private:
     bool gps_ready = false;
     bool initialized = false;
 
+    MovingAverageFilter fil_x;
+    MovingAverageFilter fil_y;
+
+    float last_x;
+    float last_y;
+
 public:
-    Localizer(ros::NodeHandle nh) : map_pc(new pcl::PointCloud<pcl::PointXYZI>)
+    Localizer(ros::NodeHandle nh) : fil_x(10), fil_y(10), map_pc(new pcl::PointCloud<pcl::PointXYZI>)
     {
         map_ready = false;
         gps_ready = false;
@@ -150,33 +158,7 @@ public:
 
         if (!initialized)
         {
-                for(float x = pose_x - search_range; x <= pose_x + search_range; x += 2){
-                    for(float y = pose_y - search_range; y <= pose_y + search_range; y += 2){
-                        pcl::copyPointCloud(*radar_pc, *pc);
-                        set_init_guess(x, y, pose_yaw);
-                        pcl::transformPointCloud(*pc, *pc, init_guess);
-
-                        pcl::IterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI> icp_init;
-                        icp_init.setInputSource(pc);
-                        icp_init.setInputTarget(map_pc);
-
-                        icp_init.setMaximumIterations(500);
-                        icp_init.setMaxCorrespondenceDistance(1.5);
-                        icp_init.setEuclideanFitnessEpsilon(0.2);
-
-                        icp_init.align(*output_pc);
-
-                        if( icp_init.getFitnessScore() < min_scores && icp_init.hasConverged()){
-                            min_scores = icp_init.getFitnessScore();
-                            best_x = x;
-                            best_y = y;
-                        }
-                    }
-                }
-
-            set_init_guess(best_x, best_y, pose_yaw);
-            pose_x = best_x;
-            pose_y = best_y;
+            set_init_guess(pose_x, pose_y+1, pose_yaw);
             initialized = true;
         }
 
@@ -187,10 +169,10 @@ public:
         icp_R.setInputSource(radar_pc);
         icp_R.setInputTarget(map_pc);
 
-        //icp_R.setMaximumIterations(100);
-        icp_R.setMaxCorrespondenceDistance(6);
-        icp_R.setEuclideanFitnessEpsilon(1e-3);
-        icp_R.setTransformationEpsilon(1e-3);
+        icp_R.setMaximumIterations(100);
+        icp_R.setMaxCorrespondenceDistance(3.5);
+        icp_R.setEuclideanFitnessEpsilon(1e-4);
+        icp_R.setTransformationEpsilon(1e-4);
 
         icp_R.align(*output_pc, init_guess);
 

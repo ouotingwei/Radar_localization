@@ -42,14 +42,13 @@ public:
         // Calculate Jacobian matrix of the model as A
         // u = [del_x, del_y, del_yaw]
         
-        /*
         // NON-LINEAR
         //setting the random noise R
         R(0, 0) = 0;
         R(1, 1) = 0;
         R(2, 2) = 0;
 
-        R = R * 100;
+        R = R * 1;
 
         B << std::cos(pose[2]), -std::sin(pose[2]), 0,
              std::sin(pose[2]), std::cos(pose[2]), 0,
@@ -60,16 +59,6 @@ public:
              0, 0, 1;  // setting the jacobian matrix
 
         pose += B * u; // motion model
-        S = A * S * A.transpose() + R;    // state （+R）
-        */
-
-        R(0, 0) = 2;
-        R(1, 1) = 2;
-        R(2, 2) = 0.01;
-
-        R = R * 1;
-
-        pose += u;
 
         S = A * S * A.transpose() + R;
 
