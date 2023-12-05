@@ -65,11 +65,13 @@ public:
         // Implement a linear or nonlinear motion model for the control input
         // Calculate Jacobian matrix of the model as A
         // u = [del_x, del_y, del_yaw]
-
+        
+        /*
+        // NON-LINEAR
         //setting the random noise R
-        R(0, 0) = 1;
-        R(1, 1) = 1;
-        R(2, 2) = 0.05;
+        R(0, 0) = 0;
+        R(1, 1) = 0;
+        R(2, 2) = 0;
 
         R = R * 100;
 
@@ -82,7 +84,18 @@ public:
              0, 0, 1;  // setting the jacobian matrix
 
         pose += B * u; // motion model
-        S = A * S * A.transpose();    // state （+R）
+        S = A * S * A.transpose() + R;    // state （+R）
+        */
+
+        R(0, 0) = 0;
+        R(1, 1) = 0;
+        R(2, 2) = 0;
+
+        R = R * 100;
+        
+        pose += u;
+
+        S = A * S * A.transpose() + R;
 
         return pose;
     }
@@ -93,19 +106,12 @@ public:
         // Calculate Jacobian matrix of the matrix as C
         // z = [x, y, yaw]
 
-        //setting the random noise S
-        std::random_device rd;
-        std::mt19937 gen(rd());
-
-        std::normal_distribution<double> translationNoise(0.0, std::sqrt(2.25));
-        std::normal_distribution<double> rotationNoise(0.0, std::sqrt(0.44));
-
         // Apply random noise to the corresponding elements of S matrix
         Q(0, 0) = 2.25;
         Q(1, 1) = 2.25;
         Q(2, 2) = 0.44;
 
-        Q = Q*10000;
+        Q = Q*10;
 
         // I choose the linear model to update the pose & state
 
@@ -295,7 +301,7 @@ public:
             predict_pose = ekf.predict(Eigen::Vector3d(icp_control[0], icp_control[1], icp_control[2]));
             pose_x = predict_pose[0];
             pose_y = predict_pose[1];
-            pose_yaw = predict_pose[2] + M_PI/2;
+            pose_yaw = predict_pose[2];
 
             set_init_guess(pose_x, pose_y, pose_yaw);
 
