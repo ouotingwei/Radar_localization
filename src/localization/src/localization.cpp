@@ -158,7 +158,8 @@ public:
 
         if (!initialized)
         {
-            set_init_guess(pose_x, pose_y+1, pose_yaw);
+            set_init_guess(pose_x, pose_y, pose_yaw);
+            last_x = 100;
             initialized = true;
         }
 
@@ -169,8 +170,8 @@ public:
         icp_R.setInputSource(radar_pc);
         icp_R.setInputTarget(map_pc);
 
-        icp_R.setMaximumIterations(100);
-        icp_R.setMaxCorrespondenceDistance(3.5);
+        icp_R.setMaximumIterations(200);
+        icp_R.setMaxCorrespondenceDistance(4);
         icp_R.setEuclideanFitnessEpsilon(1e-4);
         icp_R.setTransformationEpsilon(1e-4);
 
@@ -179,12 +180,19 @@ public:
         if (icp_R.hasConverged()) {
             std::cout << "ICP Rough Matching converged. Transformation matrix:\n" << icp_R.getFinalTransformation() << std::endl;
             ROS_WARN("ICP Rough Matching converged. Fitness score: %f", icp_R.getFitnessScore());
+            
+            float diff_y = icp_R.getFinalTransformation()(1, 3) - last_y;
+            
+            float filted_y = fil_y.update(diff_y);
 
             pose_x = icp_R.getFinalTransformation()(0, 3);
-            pose_y = icp_R.getFinalTransformation()(1, 3);
+
+            pose_y = last_y + filted_y;
         
             // Extract yaw (rotation around the z-axis) using Euler angles
             pose_yaw = atan2(icp_R.getFinalTransformation()(1, 0), icp_R.getFinalTransformation()(0, 0));
+
+            last_y = icp_R.getFinalTransformation()(1, 3);
 
             set_init_guess(pose_x, pose_y, pose_yaw);
 

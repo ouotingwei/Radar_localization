@@ -12,21 +12,22 @@ public:
         bufferX.reserve(windowSize);
     }
 
-    double update(double newX) {
-        // Add the new value to the buffer
-        bufferX.push_back(newX);
-        sumX += newX;
+    double update(double newValue) {
+    // Add the new value to the buffer
+    bufferX.push_back(newValue);
+    sumX += newValue;
 
-        // If the buffer size exceeds the window size, remove the oldest value
-        if (bufferX.size() > windowSize) {
-            sumX -= bufferX.front();
-            bufferX.erase(bufferX.begin());
-
-            // Calculate and return the moving average for x
-            double avgX = sumX / bufferX.size();
-            return avgX;
-        } else {
-            return newX;
-        }
+    // If the buffer size is below a certain threshold, return the raw value
+    if (bufferX.size() < windowSize) {
+        return newValue;
     }
+
+    // If the buffer size exceeds the window size, remove the oldest value
+    sumX -= bufferX.front();
+    bufferX.erase(bufferX.begin());
+
+    // Calculate and return the moving average
+    return sumX / bufferX.size();
+    }
+
 };

@@ -58,7 +58,7 @@ public:
              0, 1, std::cos(pose[2]) * u[0] - std::sin(pose[2]) * u[1],
              0, 0, 1;  // setting the jacobian matrix
 
-        pose += B * u; // motion model
+        pose = u;
 
         S = A * S * A.transpose() + R;
 
@@ -76,7 +76,7 @@ public:
         Q(1, 1) = 2.25;
         Q(2, 2) = 0.44;
 
-        Q = Q*100;
+        Q = Q*10;
 
         // I choose the linear model to update the pose & state
 
