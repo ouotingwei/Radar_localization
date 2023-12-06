@@ -1,10 +1,8 @@
 #include <iostream>
 #include <cmath>
-#include <limits>
 #include <Eigen/Dense>
 #include <random>
 
-// ekf class
 class ExtendedKalmanFilter {
 public:
     ExtendedKalmanFilter(double x = 0, double y = 0, double yaw = 0) {
@@ -41,8 +39,8 @@ public:
         // Implement a linear or nonlinear motion model for the control input
         // Calculate Jacobian matrix of the model as A
         // u = [del_x, del_y, del_yaw]
-        
-        // NON-LINEAR
+
+        //setting the random noise R
         //setting the random noise R
         R(0, 0) = 0;
         R(1, 1) = 0;
@@ -58,9 +56,8 @@ public:
              0, 1, std::cos(pose[2]) * u[0] - std::sin(pose[2]) * u[1],
              0, 0, 1;  // setting the jacobian matrix
 
-        pose = u;
-
-        S = A * S * A.transpose() + R;
+        pose += B * u; // motion model
+        S = A * S * A.transpose() + R;    // state
 
         return pose;
     }
@@ -71,7 +68,7 @@ public:
         // Calculate Jacobian matrix of the matrix as C
         // z = [x, y, yaw]
 
-        // Apply random noise to the corresponding elements of S matrix
+        //setting the random noise S
         Q(0, 0) = 2.25;
         Q(1, 1) = 2.25;
         Q(2, 2) = 0.44;
