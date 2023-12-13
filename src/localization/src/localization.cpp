@@ -156,7 +156,6 @@ public:
 
         if (!initialized)
         {   
-            /*
             for(float x = pose_x - search_range; x <= pose_x + search_range; x += 4){
                 for(float y = pose_y - search_range; y <= pose_y + search_range; y += 4){
                     pcl::copyPointCloud(*radar_pc, *pc);
@@ -185,7 +184,7 @@ public:
             pose_x = best_x;
             pose_y = best_y;
             initialized = true;
-            */
+            
             set_init_guess(pose_x, pose_y, pose_yaw);
             initialized = true;
         }
