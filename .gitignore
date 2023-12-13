@@ -1,4 +1,6 @@
 build/*
 devel/*
-data/*
+data/pcd_tiles/*
+data/pcd_tiles_filtered/*
+data/pcd_tiles_z0/*
 src/localization/data/*
